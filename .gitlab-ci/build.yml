@@ -1,0 +1,43 @@
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  DOCKER_REGISTRY: $CI_REGISTRY
+  DOCKER_USERNAME: $CI_REGISTRY_USER
+  DOCKER_PASSWORD: $CI_REGISTRY_PASSWORD
+  MAGENTO_PUBLIC_KEY: $MAGENTO_PUBLIC_KEY
+  MAGENTO_PRIVATE_KEY: $MAGENTO_PRIVATE_KEY
+  GITHUB_USER: $GITHUB_USER
+  GITHUB_TOKEN: $GITHUB_TOKEN
+  BITBUCKET_PUBLIC_KEY: $BITBUCKET_PUBLIC_KEY
+  BITBUCKET_PRIVATE_KEY: $BITBUCKET_PRIVATE_KEY
+  BUILD_ARGS_LIST: "MAGENTO_PUBLIC_KEY MAGENTO_PRIVATE_KEY GITHUB_USER GITHUB_TOKEN BITBUCKET_PUBLIC_KEY BITBUCKET_PRIVATE_KEY"
+  MYSQL_DATABASE: "magento"
+  MYSQL_ROOT_PASSWORD: "supersecret"
+  MYSQL_USER: "magento"
+  MYSQL_PASSWORD: "magento"
+  MYSQL_HOST: mysql
+
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - name: docker:20.10.7-dind
+      command: [ "--mtu=1300" ]
+    - name: mariadb:10.3
+      alias: db
+  before_script:
+    - timeout 120s sh -c 'until docker info; do sleep 1; done'
+    - echo "${DOCKER_PASSWORD:-}" | docker login -u "${DOCKER_USERNAME:-}" --password-stdin "${DOCKER_REGISTRY:-docker.io}"
+    - IMAGE_TAG="${DOCKER_REGISTRY}/${CI_PROJECT_PATH}:${CI_COMMIT_REF_NAME}"
+  script:
+    - |
+      BUILD_ARGS=""
+      for ARG in ${BUILD_ARGS_LIST}; do \
+        BUILD_ARGS="${BUILD_ARGS} --build-arg ${ARG}"; \
+      done;
+    - docker build --pull --tag "${IMAGE_TAG}" ${BUILD_ARGS} -f .gitlab-ci/Dockerfile .
+    - docker push "${IMAGE_TAG}"
+    - docker rmi "${IMAGE_TAG}"
